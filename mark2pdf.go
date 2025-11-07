@@ -210,8 +210,69 @@ func (c *Converter) renderInlineElementsWithPrefix(prefix string, elements []Inl
 		parts = append(parts, TextPart{Text: text, Font: fontName})
 	}
 
-	// Render all parts on the same line
-	c.pdf.writeMultiStyleText(parts, baseFontSize)
+	// Render with word wrapping
+	c.writeMultiStyleTextWrapped(parts, baseFontSize)
+}
+
+// writeMultiStyleTextWrapped scrive testo multi-stile con word wrapping
+func (c *Converter) writeMultiStyleTextWrapped(parts []TextPart, fontSize float64) {
+	maxWidth := c.pdf.pageWidth - c.pdf.margin*2
+	avgCharWidth := fontSize * 0.5
+
+	currentLine := []TextPart{}
+	currentWidth := 0.0
+
+	for _, part := range parts {
+		// Split text into words
+		words := strings.Fields(part.Text)
+
+		for i, word := range words {
+			wordWidth := float64(len(word)) * avgCharWidth
+			spaceWidth := avgCharWidth * 0.5
+
+			// Add space before word (except for first word or after prefix)
+			if i > 0 || (len(currentLine) > 0 && currentLine[len(currentLine)-1].Text != "") {
+				testWidth := currentWidth + spaceWidth + wordWidth
+				if testWidth > maxWidth && len(currentLine) > 0 {
+					// Write current line
+					c.pdf.writeMultiStyleText(currentLine, fontSize)
+					currentLine = []TextPart{}
+					currentWidth = 0
+				} else {
+					// Add space to last part if same font, otherwise create new part
+					if len(currentLine) > 0 && currentLine[len(currentLine)-1].Font == part.Font {
+						currentLine[len(currentLine)-1].Text += " "
+						currentWidth += spaceWidth
+					} else {
+						currentLine = append(currentLine, TextPart{Text: " ", Font: part.Font})
+						currentWidth += spaceWidth
+					}
+				}
+			}
+
+			// Check if word fits on current line
+			if currentWidth+wordWidth > maxWidth && len(currentLine) > 0 {
+				// Write current line and start new one
+				c.pdf.writeMultiStyleText(currentLine, fontSize)
+				currentLine = []TextPart{{Text: word, Font: part.Font}}
+				currentWidth = wordWidth
+			} else {
+				// Add word to current line
+				if len(currentLine) > 0 && currentLine[len(currentLine)-1].Font == part.Font {
+					// Merge with previous part if same font
+					currentLine[len(currentLine)-1].Text += word
+				} else {
+					currentLine = append(currentLine, TextPart{Text: word, Font: part.Font})
+				}
+				currentWidth += wordWidth
+			}
+		}
+	}
+
+	// Write remaining line
+	if len(currentLine) > 0 {
+		c.pdf.writeMultiStyleText(currentLine, fontSize)
+	}
 }
 
 // renderInlineElements renderizza una lista di elementi inline con formattazione
