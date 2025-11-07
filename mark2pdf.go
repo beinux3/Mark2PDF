@@ -158,9 +158,9 @@ func (c *Converter) renderElement(elem MarkdownElement) error {
 		c.pdf.addSpace(5)
 
 	case "hr":
-		c.pdf.addSpace(5)
+		c.pdf.addSpace(15)
 		c.pdf.writeLine(c.pdf.pageWidth - c.pdf.margin*2)
-		c.pdf.addSpace(5)
+		c.pdf.addSpace(15)
 	}
 
 	return nil
