@@ -60,36 +60,36 @@ func (c *Converter) renderElement(elem MarkdownElement) error {
 	switch elem.Type {
 	case "h1":
 		c.pdf.addSpace(10)
-		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h1"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h1"))
 		c.pdf.addSpace(5)
 
 	case "h2":
 		c.pdf.addSpace(8)
-		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h2"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h2"))
 		c.pdf.addSpace(4)
 
 	case "h3":
 		c.pdf.addSpace(6)
-		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h3"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h3"))
 		c.pdf.addSpace(3)
 
 	case "h4":
 		c.pdf.addSpace(5)
-		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h4"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h4"))
 		c.pdf.addSpace(2)
 
 	case "h5":
 		c.pdf.addSpace(4)
-		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h5"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h5"))
 		c.pdf.addSpace(2)
 
 	case "h6":
 		c.pdf.addSpace(3)
-		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h6"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h6"))
 		c.pdf.addSpace(2)
 
 	case "p":
-		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("normal"), false)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("normal"))
 		c.pdf.addSpace(8)
 
 	case "code":
@@ -108,8 +108,7 @@ func (c *Converter) renderElement(elem MarkdownElement) error {
 		for i, item := range elem.Items {
 			// Use inline children if available, otherwise use raw item
 			if i < len(elem.ItemChildren) && len(elem.ItemChildren[i]) > 0 {
-				c.pdf.writeText("  - ", c.pdf.GetFontSize("normal"), false)
-				c.renderInlineElements(elem.ItemChildren[i], c.pdf.GetFontSize("normal"), false)
+				c.renderInlineElementsWithPrefix("  - ", elem.ItemChildren[i], c.pdf.GetFontSize("normal"))
 			} else {
 				text := "  - " + item
 				c.writeWrappedText(text, c.pdf.GetFontSize("normal"), false)
@@ -122,8 +121,7 @@ func (c *Converter) renderElement(elem MarkdownElement) error {
 		for i, item := range elem.Items {
 			prefix := fmt.Sprintf("  %d. ", i+1)
 			if i < len(elem.ItemChildren) && len(elem.ItemChildren[i]) > 0 {
-				c.pdf.writeText(prefix, c.pdf.GetFontSize("normal"), false)
-				c.renderInlineElements(elem.ItemChildren[i], c.pdf.GetFontSize("normal"), false)
+				c.renderInlineElementsWithPrefix(prefix, elem.ItemChildren[i], c.pdf.GetFontSize("normal"))
 			} else {
 				text := prefix + item
 				c.writeWrappedText(text, c.pdf.GetFontSize("normal"), false)
@@ -141,8 +139,7 @@ func (c *Converter) renderElement(elem MarkdownElement) error {
 			}
 
 			if i < len(elem.ItemChildren) && len(elem.ItemChildren[i]) > 0 {
-				c.pdf.writeText(checkbox, c.pdf.GetFontSize("normal"), false)
-				c.renderInlineElements(elem.ItemChildren[i], c.pdf.GetFontSize("normal"), false)
+				c.renderInlineElementsWithPrefix(checkbox, elem.ItemChildren[i], c.pdf.GetFontSize("normal"))
 			} else {
 				c.writeWrappedText("  "+item, c.pdf.GetFontSize("normal"), false)
 			}
@@ -169,34 +166,33 @@ func (c *Converter) renderElement(elem MarkdownElement) error {
 	return nil
 }
 
-// renderInlineElements renderizza una lista di elementi inline con formattazione
-func (c *Converter) renderInlineElements(elements []InlineElement, baseFontSize float64, isBold bool) {
-	if len(elements) == 0 {
-		return
+// renderInlineElementsWithPrefix renderizza un prefisso seguito da elementi inline
+func (c *Converter) renderInlineElementsWithPrefix(prefix string, elements []InlineElement, baseFontSize float64) {
+	// Build the complete text with formatting markers
+	parts := []TextPart{}
+
+	// Add prefix with regular font
+	if prefix != "" {
+		parts = append(parts, TextPart{Text: prefix, Font: "F1"})
 	}
 
-	// Calculate text width to handle wrapping
-	xOffset := 0.0
-	avgCharWidth := baseFontSize * 0.5
-	maxWidth := c.pdf.pageWidth - c.pdf.margin*2
-	currentLineWidth := 0.0
-
+	// Add inline elements with their respective fonts
 	for _, elem := range elements {
 		var fontName string
 		var text string
 
 		switch elem.Type {
 		case "text":
-			fontName = "F1" // Regular
+			fontName = "F1"
 			text = elem.Content
 		case "bold":
-			fontName = "F2" // Bold
+			fontName = "F2"
 			text = elem.Content
 		case "italic":
-			fontName = "F3" // Italic
+			fontName = "F3"
 			text = elem.Content
 		case "code":
-			fontName = "F4" // Monospace
+			fontName = "F4"
 			text = elem.Content
 		case "link":
 			fontName = "F1"
@@ -211,25 +207,16 @@ func (c *Converter) renderInlineElements(elements []InlineElement, baseFontSize 
 			continue
 		}
 
-		// Estimate text width
-		textWidth := float64(len(text)) * avgCharWidth
-
-		// Check if we need to wrap
-		if currentLineWidth+textWidth > maxWidth {
-			// Move to next line
-			c.pdf.yPosition -= baseFontSize * 1.5
-			currentLineWidth = 0
-			xOffset = 0
-		}
-
-		// Write the text inline
-		c.pdf.writeInlineText(text, baseFontSize, fontName, xOffset)
-		xOffset += textWidth
-		currentLineWidth += textWidth
+		parts = append(parts, TextPart{Text: text, Font: fontName})
 	}
 
-	// Move to next line after finishing all elements
-	c.pdf.yPosition -= baseFontSize * 1.5
+	// Render all parts on the same line
+	c.pdf.writeMultiStyleText(parts, baseFontSize)
+}
+
+// renderInlineElements renderizza una lista di elementi inline con formattazione
+func (c *Converter) renderInlineElements(elements []InlineElement, baseFontSize float64) {
+	c.renderInlineElementsWithPrefix("", elements, baseFontSize)
 }
 
 // renderTable renderizza una tabella

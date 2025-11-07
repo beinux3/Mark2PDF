@@ -110,6 +110,40 @@ func (p *PDFWriter) writeInlineText(text string, fontSize float64, fontName stri
 	p.currentBuf.WriteString("ET\n")
 }
 
+// TextPart rappresenta una parte di testo con un font specifico
+type TextPart struct {
+	Text string
+	Font string
+}
+
+// writeMultiStyleText scrive testo con stili multipli sulla stessa riga
+func (p *PDFWriter) writeMultiStyleText(parts []TextPart, fontSize float64) {
+	if p.currentBuf == nil {
+		p.newPage()
+	}
+
+	// Check if we need a new page
+	if p.yPosition < p.margin+20 {
+		p.newPage()
+	}
+
+	// Start text block
+	p.currentBuf.WriteString("BT\n")
+	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f Td\n", p.margin, p.yPosition))
+
+	// Write each part with its font
+	for _, part := range parts {
+		p.currentBuf.WriteString(fmt.Sprintf("/%s %.2f Tf\n", part.Font, fontSize))
+		escapedText := escapeString(part.Text)
+		p.currentBuf.WriteString(fmt.Sprintf("(%s) Tj\n", escapedText))
+	}
+
+	p.currentBuf.WriteString("ET\n")
+
+	// Move to next line
+	p.yPosition -= fontSize * 1.5
+}
+
 // writeLine scrive una linea orizzontale
 func (p *PDFWriter) writeLine(width float64) {
 	if p.currentBuf == nil {
