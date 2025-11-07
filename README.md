@@ -9,8 +9,12 @@ A pure Go library for converting Markdown documents to PDF without any external 
 ## Features
 
 - **Zero external dependencies**: Completely native Go implementation
-- **Full Markdown parser**: Supports headers, lists, code blocks, blockquotes, and more
-- **Native PDF generator**: Creates valid PDFs without external libraries
+- **Full Markdown parser**: Supports headers, lists, code blocks, blockquotes, tables, and more
+- **Rich inline formatting**: Bold, italic, inline code, links, images, and strikethrough
+- **Advanced table rendering**: Bordered tables with automatic column sizing and padding
+- **Native PDF generator**: Creates valid PDFs conforming to PDF 1.4 standard
+- **Word wrapping**: Automatic text wrapping for long paragraphs and inline elements
+- **Multiple fonts**: Helvetica (regular, bold, oblique) and Courier for code
 - **Simple API**: Intuitive and easy-to-use interface
 - **Lightweight**: Efficient and performant code
 
@@ -95,51 +99,121 @@ err := converter.ConvertToWriter(writer)
 
 ### Headers
 
+All six levels of headers are supported with appropriate font sizes:
+
 ```markdown
-# H1
-## H2
-### H3
-#### H4
-##### H5
-###### H6
+# H1 (24pt)
+## H2 (20pt)
+### H3 (16pt)
+#### H4 (14pt)
+##### H5 (12pt)
+###### H6 (11pt)
 ```
 
 ### Paragraphs
 
-Regular text with automatic line wrapping.
+Regular text with automatic word wrapping to fit page width.
+
+### Inline Formatting
+
+Rich text formatting within paragraphs, headers, and lists:
+
+```markdown
+**bold text**
+*italic text*
+`inline code`
+[link text](https://example.com)
+![image alt text](https://example.com/image.png)
+~~strikethrough~~
+```
+
+You can also combine formatting:
+```markdown
+**bold with *italic* inside**
+**bold with `code`**
+```
 
 ### Unordered Lists
 
+With full support for inline formatting:
+
 ```markdown
-- Item 1
-- Item 2
-- Item 3
+- Item 1 with **bold**
+- Item 2 with *italic*
+- Item 3 with `code`
 ```
 
 ### Ordered Lists
 
+Automatically numbered lists:
+
 ```markdown
-1. First
-2. Second
-3. Third
+1. First item with **formatting**
+2. Second item with *emphasis*
+3. Third item with `code`
+```
+
+### Task Lists
+
+GitHub-style task lists with checkboxes:
+
+```markdown
+- [ ] Incomplete task with **bold**
+- [x] Completed task with *italic*
+- [ ] Another task with `code`
 ```
 
 ### Code Blocks
 
+Syntax-highlighted code blocks with language specification:
+
 ````markdown
 ```go
 package main
-func main() {}
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello, World!")
+}
+```
+
+```python
+def hello():
+    print("Hello, World!")
 ```
 ````
 
 ### Blockquotes
 
+Quote blocks with inline formatting support:
+
 ```markdown
-> This is a blockquote
+> This is a blockquote with **bold** and *italic*.
+> It can span multiple lines.
 ```
 
+### Tables
+
+Markdown tables with automatic column sizing and borders:
+
+```markdown
+| Header 1 | Header 2 | Header 3 |
+|----------|----------|----------|
+| Cell 1   | Cell 2   | Cell 3   |
+| Data 1   | Data 2   | Data 3   |
+```
+
+Features:
+- Automatic column width calculation based on content
+- Proportional scaling when table exceeds page width
+- Thicker borders for header row
+- Proper cell padding (10pt)
+- Text truncation with "..." for overflow
+
 ### Horizontal Rules
+
+Visual separators with ample spacing:
 
 ```markdown
 ---
@@ -168,15 +242,50 @@ mark2pdf/
 2. **Rendering**: Each element is rendered in the PDF using basic PDF primitives
 3. **Generation**: The PDF generator creates a valid PDF document conforming to PDF 1.4 standard
 
+## Technical Details
+
+### PDF Generation
+
+- **PDF Version**: 1.4 specification
+- **Page Size**: A4 (595.28 × 841.89 points)
+- **Margins**: 50 points on all sides
+- **Compression**: zlib (FlateDecode) for content streams
+- **Fonts**:
+  - F1: Helvetica (regular text)
+  - F2: Helvetica-Bold (bold text, table headers)
+  - F3: Helvetica-Oblique (italic text)
+  - F4: Courier (code blocks and inline code)
+
+### Font Sizes
+
+- H1: 24pt
+- H2: 20pt
+- H3: 16pt
+- H4: 14pt
+- H5: 12pt
+- H6: 11pt
+- Normal text: 10pt
+- Code: 9pt
+
+### Word Wrapping
+
+The library implements intelligent word wrapping for:
+- Paragraphs with mixed inline formatting
+- List items with inline formatting
+- Long text that exceeds page width
+
+Text is split on word boundaries and distributed across multiple lines while preserving formatting (bold, italic, code) throughout.
+
 ## Limitations
 
-This is a basic implementation that supports the most common Markdown elements. Some advanced features are not yet implemented:
+Some advanced features are not yet implemented:
 
-- Images
-- Tables
-- Complex inline formatting (bold, italic, links are partially supported)
-- Custom fonts (uses only Helvetica)
-- Custom colors
+- Image embedding (images are displayed as text references)
+- Custom fonts (limited to standard PDF fonts)
+- Custom colors (uses only black)
+- Nested lists
+- Custom page sizes
+- Headers and footers
 
 ## Integration with Your Go Project
 
@@ -221,14 +330,41 @@ The `mark2pdf` package will be automatically downloaded and included in your bui
 
 ## Examples
 
-Complete examples can be found in the `examples/` directory:
+Complete examples can be found in the `examples/` directory. Run the test suite to see all features:
 
 ```bash
 cd examples
 go run basic.go
 ```
 
-This will create a sample PDF file demonstrating all supported features.
+This will generate 8 test PDFs demonstrating all supported features:
+
+1. **test1_simple.pdf** - Basic document structure
+2. **test2_inline_formatting.pdf** - Bold, italic, code, links, images
+3. **test3_lists.pdf** - Unordered, ordered, and task lists with formatting
+4. **test4_code_blocks.pdf** - Code blocks with language specifications
+5. **test5_blockquotes.pdf** - Blockquotes with inline formatting
+6. **test6_tables.pdf** - Tables with proper borders and alignment
+7. **test7_horizontal_rules.pdf** - Horizontal rules as section separators
+8. **test8_comprehensive.pdf** - Complete showcase of all features
+
+### Command Line Tool
+
+Build and use the command-line tool:
+
+```bash
+# Build
+make build
+
+# Convert a Markdown file
+./bin/mark2pdf -input document.md -output document.pdf
+
+# Show version
+./bin/mark2pdf -version
+
+# Show help
+./bin/mark2pdf -help
+```
 
 ## Contributing
 
