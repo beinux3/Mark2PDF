@@ -219,41 +219,107 @@ func (c *Converter) renderInlineElements(elements []InlineElement, baseFontSize 
 	c.renderInlineElementsWithPrefix("", elements, baseFontSize)
 }
 
-// renderTable renderizza una tabella
+// renderTable renderizza una tabella con bordi e celle
 func (c *Converter) renderTable(elem MarkdownElement) {
 	if len(elem.TableRows) == 0 {
 		return
 	}
 
-	// Calculate column widths
+	fontSize := c.pdf.GetFontSize("normal")
+	cellPadding := 10.0 // Increased padding for better spacing
+	rowHeight := fontSize * 2.5
+
+	// Calculate column widths based on content
 	maxWidth := c.pdf.pageWidth - c.pdf.margin*2
 	numCols := len(elem.TableRows[0])
-	_ = maxWidth / float64(numCols) // colWidth for future use
 
-	// Render header row
-	if len(elem.TableRows) > 0 {
-		headerText := ""
-		for i, cell := range elem.TableRows[0] {
-			if i > 0 {
-				headerText += " | "
+	// Calculate max width needed for each column (content only, without padding)
+	colContentWidths := make([]float64, numCols)
+	avgCharWidth := fontSize * 0.6 // More conservative estimate for character width
+
+	for _, row := range elem.TableRows {
+		for j, cell := range row {
+			if j < numCols {
+				contentWidth := float64(len(cell)) * avgCharWidth
+				if contentWidth > colContentWidths[j] {
+					colContentWidths[j] = contentWidth
+				}
 			}
-			headerText += cell
 		}
-		c.pdf.writeText(headerText, c.pdf.GetFontSize("normal"), true)
-		c.pdf.writeLine(maxWidth)
 	}
 
-	// Render data rows
-	for i := 1; i < len(elem.TableRows); i++ {
-		rowText := ""
-		for j, cell := range elem.TableRows[i] {
-			if j > 0 {
-				rowText += " | "
-			}
-			rowText += cell
-		}
-		c.writeWrappedText(rowText, c.pdf.GetFontSize("normal"), false)
+	// Add padding to get total column widths
+	colWidths := make([]float64, numCols)
+	totalWidth := 0.0
+	for j := range colContentWidths {
+		colWidths[j] = colContentWidths[j] + cellPadding*2
+		totalWidth += colWidths[j]
 	}
+
+	// Adjust if total width exceeds page width
+	// Scale only the content width, not the padding
+	if totalWidth > maxWidth {
+		availableContentWidth := maxWidth - float64(numCols)*cellPadding*2
+		totalContentWidth := 0.0
+		for _, w := range colContentWidths {
+			totalContentWidth += w
+		}
+
+		if totalContentWidth > 0 {
+			scale := availableContentWidth / totalContentWidth
+			for j := range colWidths {
+				colWidths[j] = colContentWidths[j]*scale + cellPadding*2
+			}
+		}
+		totalWidth = maxWidth
+	}
+
+	// Render each row
+	for rowIdx, row := range elem.TableRows {
+		startY := c.pdf.yPosition
+		isHeader := rowIdx == 0
+
+		// Draw cells for this row
+		xPos := c.pdf.margin
+		for colIdx, cell := range row {
+			if colIdx >= numCols {
+				break
+			}
+
+			cellWidth := colWidths[colIdx]
+
+			// Draw cell border (thicker for header)
+			if isHeader {
+				c.pdf.drawThickRect(xPos, startY, cellWidth, rowHeight)
+			} else {
+				c.pdf.drawRect(xPos, startY, cellWidth, rowHeight)
+			}
+
+			// Truncate text if too long for cell
+			maxCellChars := int((cellWidth - cellPadding*2) / avgCharWidth)
+			displayText := cell
+			if len(cell) > maxCellChars && maxCellChars > 3 {
+				displayText = cell[:maxCellChars-3] + "..."
+			}
+
+			// Draw cell text (centered vertically in cell)
+			// Calculate Y position: start from top of cell, go down by half row height, adjust for font baseline
+			textY := startY - rowHeight/2 - fontSize/3
+			c.pdf.writeTextAt(displayText, xPos+cellPadding, textY, fontSize, isHeader)
+
+			xPos += cellWidth
+		}
+
+		// Move to next row
+		c.pdf.yPosition = startY - rowHeight
+
+		// Add extra spacing after header
+		if isHeader {
+			c.pdf.yPosition -= 2
+		}
+	}
+
+	c.pdf.addSpace(5)
 }
 
 // writeWrappedText scrive testo con word wrapping

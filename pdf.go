@@ -162,6 +162,50 @@ func (p *PDFWriter) writeLine(width float64) {
 	p.yPosition -= 10
 }
 
+// drawRect disegna un rettangolo (bordo cella tabella)
+func (p *PDFWriter) drawRect(x, y, width, height float64) {
+	if p.currentBuf == nil {
+		p.newPage()
+	}
+
+	// Draw rectangle border with default line width
+	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f %.2f %.2f re\n", x, y-height, width, height))
+	p.currentBuf.WriteString("S\n")
+}
+
+// drawThickRect disegna un rettangolo con bordo più spesso (per header tabelle)
+func (p *PDFWriter) drawThickRect(x, y, width, height float64) {
+	if p.currentBuf == nil {
+		p.newPage()
+	}
+
+	// Set thicker line width for header
+	p.currentBuf.WriteString("1.5 w\n") // Set line width to 1.5
+	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f %.2f %.2f re\n", x, y-height, width, height))
+	p.currentBuf.WriteString("S\n")
+	p.currentBuf.WriteString("1 w\n") // Reset to default line width
+}
+
+// writeTextAt scrive testo a coordinate specifiche senza modificare yPosition
+func (p *PDFWriter) writeTextAt(text string, x, y, fontSize float64, isBold bool) {
+	if p.currentBuf == nil {
+		p.newPage()
+	}
+
+	fontName := "F1"
+	if isBold {
+		fontName = "F2"
+	}
+
+	p.currentBuf.WriteString("BT\n")
+	p.currentBuf.WriteString(fmt.Sprintf("/%s %.2f Tf\n", fontName, fontSize))
+	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f Td\n", x, y))
+
+	escapedText := escapeString(text)
+	p.currentBuf.WriteString(fmt.Sprintf("(%s) Tj\n", escapedText))
+	p.currentBuf.WriteString("ET\n")
+}
+
 // addSpace aggiunge spazio verticale
 func (p *PDFWriter) addSpace(points float64) {
 	p.yPosition -= points
