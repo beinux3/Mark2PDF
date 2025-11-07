@@ -258,31 +258,3 @@ MIT License - see [LICENSE](LICENSE) file for details
 ## Author
 
 Created as an example of a pure Go library without external dependencies.
-
-## Publishing to GitHub
-
-To make this library publicly available:
-
-1. **Create a GitHub repository** named `mark2pdf` under your account
-2. **Push the code**:
-```bash
-git add .
-git commit -m "Initial commit: Mark2PDF library"
-git remote add origin https://github.com/beinux3/Mark2PDF.git
-git push -u origin main
-```
-
-3. **Tag a release**:
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-4. **Users can now install** with:
-```bash
-go get github.com/beinux3/Mark2PDF@v0.1.0
-```
-
-## Versioning
-
-This project follows [Semantic Versioning](https://semver.org/). For available versions, see the [tags on this repository](https://github.com/beinux3/Mark2PDF/tags).
