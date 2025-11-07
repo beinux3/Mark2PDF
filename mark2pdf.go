@@ -196,9 +196,15 @@ func (c *Converter) convertInlineToTextParts(elements []InlineElement, baseColor
 				case "code":
 					childParts[i].Font = "F4"
 				case "color":
+					// Always apply the color from this element if not already set
 					if childParts[i].Color == nil {
 						childParts[i].Color = elem.Color
 					}
+				}
+
+				// Ensure color inheritance even if not explicitly set
+				if elem.Type == "color" && childParts[i].Color == nil {
+					childParts[i].Color = elem.Color
 				}
 			}
 
@@ -300,7 +306,7 @@ func (c *Converter) writeMultiStyleTextWrapped(parts []TextPart, fontSize float6
 						currentLine[len(currentLine)-1].Text += " "
 						currentWidth += spaceWidth
 					} else {
-						currentLine = append(currentLine, TextPart{Text: " ", Font: part.Font})
+						currentLine = append(currentLine, TextPart{Text: " ", Font: part.Font, Color: part.Color})
 						currentWidth += spaceWidth
 					}
 				}
@@ -310,7 +316,7 @@ func (c *Converter) writeMultiStyleTextWrapped(parts []TextPart, fontSize float6
 			if currentWidth+wordWidth > maxWidth && len(currentLine) > 0 {
 				// Write current line and start new one
 				c.pdf.writeMultiStyleText(currentLine, fontSize)
-				currentLine = []TextPart{{Text: word, Font: part.Font}}
+				currentLine = []TextPart{{Text: word, Font: part.Font, Color: part.Color}}
 				currentWidth = wordWidth
 			} else {
 				// Add word to current line
@@ -318,7 +324,7 @@ func (c *Converter) writeMultiStyleTextWrapped(parts []TextPart, fontSize float6
 					// Merge with previous part if same font
 					currentLine[len(currentLine)-1].Text += word
 				} else {
-					currentLine = append(currentLine, TextPart{Text: word, Font: part.Font})
+					currentLine = append(currentLine, TextPart{Text: word, Font: part.Font, Color: part.Color})
 				}
 				currentWidth += wordWidth
 			}

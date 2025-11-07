@@ -36,6 +36,10 @@ All notable changes to this project will be documented in this file.
   - Example: `{blue}**Bold inside blue**{/blue}` now works correctly
   - Recursive parsing of inline elements within colored text
   - Proper inheritance of colors in nested structures
+- **Color rendering in word-wrapped text** - Fixed critical bug where colors were lost during word wrapping
+  - Issue: `TextPart.Color` field was not being copied when creating new text parts in `writeMultiStyleTextWrapped()`
+  - Fixed in [mark2pdf.go:320, 330, 338](mark2pdf.go) by ensuring `Color` field is preserved during text wrapping operations
+  - Now all colored text renders correctly in PDFs regardless of line length
 
 ### Technical Details
 - Colors are rendered using PDF RGB color space
