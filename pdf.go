@@ -10,28 +10,30 @@ import (
 
 // PDFWriter gestisce la creazione di documenti PDF
 type PDFWriter struct {
-	objects     [][]byte
-	pages       []int
-	buffer      *bytes.Buffer
-	yPosition   float64
-	pageWidth   float64
-	pageHeight  float64
-	margin      float64
-	currentPage int
-	fontSizes   map[string]float64
+	objects      [][]byte
+	pages        []int
+	currentBuf   *bytes.Buffer
+	yPosition    float64
+	pageWidth    float64
+	pageHeight   float64
+	margin       float64
+	currentPage  int
+	fontSizes    map[string]float64
+	pageContents []*bytes.Buffer
 }
 
 // NewPDFWriter crea un nuovo writer PDF
 func NewPDFWriter() *PDFWriter {
 	return &PDFWriter{
-		objects:     make([][]byte, 0),
-		pages:       make([]int, 0),
-		buffer:      &bytes.Buffer{},
-		pageWidth:   595.28, // A4 width in points
-		pageHeight:  841.89, // A4 height in points
-		margin:      50.0,
-		yPosition:   791.89, // Start position (top - margin)
-		currentPage: 0,
+		objects:      make([][]byte, 0),
+		pages:        make([]int, 0),
+		currentBuf:   nil,
+		pageWidth:    595.28, // A4 width in points
+		pageHeight:   841.89, // A4 height in points
+		margin:       50.0,
+		yPosition:    0,
+		currentPage:  -1,
+		pageContents: make([]*bytes.Buffer, 0),
 		fontSizes: map[string]float64{
 			"h1":     24,
 			"h2":     20,
@@ -52,21 +54,16 @@ func (p *PDFWriter) addObject(content []byte) int {
 }
 
 // newPage crea una nuova pagina
-func (p *PDFWriter) newPage() int {
-	p.yPosition = p.pageHeight - p.margin
+func (p *PDFWriter) newPage() {
 	p.currentPage++
-
-	// Create page content stream
-	contentBuf := &bytes.Buffer{}
-	pageNum := p.addObject(contentBuf.Bytes())
-	p.pages = append(p.pages, pageNum)
-
-	return pageNum
+	p.yPosition = p.pageHeight - p.margin
+	p.currentBuf = &bytes.Buffer{}
+	p.pageContents = append(p.pageContents, p.currentBuf)
 }
 
 // writeText scrive testo alla posizione corrente
 func (p *PDFWriter) writeText(text string, fontSize float64, isBold bool) {
-	if p.currentPage == 0 {
+	if p.currentBuf == nil {
 		p.newPage()
 	}
 
@@ -75,27 +72,32 @@ func (p *PDFWriter) writeText(text string, fontSize float64, isBold bool) {
 		p.newPage()
 	}
 
-	p.buffer.WriteString(fmt.Sprintf("BT\n"))
-	p.buffer.WriteString(fmt.Sprintf("/F1 %.2f Tf\n", fontSize))
-	p.buffer.WriteString(fmt.Sprintf("%.2f %.2f Td\n", p.margin, p.yPosition))
+	p.currentBuf.WriteString("BT\n")
+	p.currentBuf.WriteString(fmt.Sprintf("/F1 %.2f Tf\n", fontSize))
+	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f Td\n", p.margin, p.yPosition))
 
 	// Escape special characters in text
 	escapedText := escapeString(text)
-	p.buffer.WriteString(fmt.Sprintf("(%s) Tj\n", escapedText))
-	p.buffer.WriteString("ET\n")
+	p.currentBuf.WriteString(fmt.Sprintf("(%s) Tj\n", escapedText))
+	p.currentBuf.WriteString("ET\n")
 
 	p.yPosition -= fontSize * 1.5
 }
 
 // writeLine scrive una linea orizzontale
 func (p *PDFWriter) writeLine(width float64) {
-	if p.currentPage == 0 {
+	if p.currentBuf == nil {
 		p.newPage()
 	}
 
-	p.buffer.WriteString(fmt.Sprintf("%.2f %.2f m\n", p.margin, p.yPosition))
-	p.buffer.WriteString(fmt.Sprintf("%.2f %.2f l\n", p.margin+width, p.yPosition))
-	p.buffer.WriteString("S\n")
+	// Check if we need a new page
+	if p.yPosition < p.margin+20 {
+		p.newPage()
+	}
+
+	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f m\n", p.margin, p.yPosition))
+	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f l\n", p.margin+width, p.yPosition))
+	p.currentBuf.WriteString("S\n")
 
 	p.yPosition -= 10
 }
@@ -103,7 +105,7 @@ func (p *PDFWriter) writeLine(width float64) {
 // addSpace aggiunge spazio verticale
 func (p *PDFWriter) addSpace(points float64) {
 	p.yPosition -= points
-	if p.yPosition < p.margin {
+	if p.yPosition < p.margin+20 {
 		p.newPage()
 	}
 }
@@ -135,24 +137,9 @@ func escapeString(s string) string {
 
 // Build costruisce il PDF finale
 func (p *PDFWriter) Build() ([]byte, error) {
-	// Finalize current page content
-	if p.buffer.Len() > 0 {
-		// Update the last page object with actual content
-		if len(p.pages) > 0 {
-			content := p.buffer.Bytes()
-
-			// Compress content
-			var compressed bytes.Buffer
-			w := zlib.NewWriter(&compressed)
-			w.Write(content)
-			w.Close()
-
-			streamObj := fmt.Sprintf("<< /Length %d /Filter /FlateDecode >>\nstream\n", compressed.Len())
-			streamObj += compressed.String()
-			streamObj += "\nendstream"
-
-			p.objects[p.pages[len(p.pages)-1]-1] = []byte(streamObj)
-		}
+	// If no pages were created, create an empty one
+	if len(p.pageContents) == 0 {
+		p.newPage()
 	}
 
 	output := &bytes.Buffer{}
@@ -172,56 +159,73 @@ func (p *PDFWriter) Build() ([]byte, error) {
 	output.WriteString("endobj\n")
 	objNum++
 
-	// Pages object (Object 2)
-	xrefPositions = append(xrefPositions, output.Len())
+	// Pages object (Object 2) - must be referenced by Catalog
+	pagesObjNum := objNum
+	numPages := len(p.pageContents)
+
+	// Reserve space for Pages object - we'll write it here
+	pagesPos := output.Len()
+	xrefPositions = append(xrefPositions, pagesPos)
+
+	// Calculate object numbers
+	fontObjNum := objNum + 1
+	pageObjStart := fontObjNum + 1
+	contentObjStart := pageObjStart + numPages
+
+	// Write Pages object
 	output.WriteString(fmt.Sprintf("%d 0 obj\n", objNum))
 	output.WriteString("<< /Type /Pages ")
 	output.WriteString("/Kids [")
-	for i := range p.pages {
-		output.WriteString(fmt.Sprintf("%d 0 R ", objNum+1+i))
+	for i := 0; i < numPages; i++ {
+		output.WriteString(fmt.Sprintf("%d 0 R ", pageObjStart+i))
 	}
 	output.WriteString("] ")
-	output.WriteString(fmt.Sprintf("/Count %d ", len(p.pages)))
+	output.WriteString(fmt.Sprintf("/Count %d ", numPages))
 	output.WriteString(">>\n")
 	output.WriteString("endobj\n")
 	objNum++
 
-	// Font object (will be object 3)
-	fontObjNum := objNum
+	// Font object (Object 3)
 	xrefPositions = append(xrefPositions, output.Len())
-	output.WriteString(fmt.Sprintf("%d 0 obj\n", objNum))
+	output.WriteString(fmt.Sprintf("%d 0 obj\n", fontObjNum))
 	output.WriteString("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\n")
 	output.WriteString("endobj\n")
-	objNum++
+	objNum = fontObjNum + 1
 
-	// Page objects and their content streams
-	for i := range p.pages {
-		// Page object
+	// Page objects
+	for i := range p.pageContents {
 		xrefPositions = append(xrefPositions, output.Len())
-		output.WriteString(fmt.Sprintf("%d 0 obj\n", objNum))
+		pageObjNum := pageObjStart + i
+		contentObjNum := contentObjStart + i
+
+		output.WriteString(fmt.Sprintf("%d 0 obj\n", pageObjNum))
 		output.WriteString("<< /Type /Page ")
-		output.WriteString("/Parent 2 0 R ")
+		output.WriteString(fmt.Sprintf("/Parent %d 0 R ", pagesObjNum))
 		output.WriteString(fmt.Sprintf("/MediaBox [0 0 %.2f %.2f] ", p.pageWidth, p.pageHeight))
-		output.WriteString(fmt.Sprintf("/Contents %d 0 R ", objNum+len(p.pages)))
+		output.WriteString(fmt.Sprintf("/Contents %d 0 R ", contentObjNum))
 		output.WriteString(fmt.Sprintf("/Resources << /Font << /F1 %d 0 R >> >> ", fontObjNum))
 		output.WriteString(">>\n")
 		output.WriteString("endobj\n")
-
-		// Update content stream position
-		p.pages[i] = objNum + len(p.pages)
-		objNum++
 	}
 
 	// Content streams
-	for _, contentNum := range p.pages {
+	for i, pageBuf := range p.pageContents {
+		content := pageBuf.Bytes()
+
+		// Compress content
+		var compressed bytes.Buffer
+		w := zlib.NewWriter(&compressed)
+		w.Write(content)
+		w.Close()
+
+		contentObjNum := contentObjStart + i
 		xrefPositions = append(xrefPositions, output.Len())
-		output.WriteString(fmt.Sprintf("%d 0 obj\n", contentNum))
-
-		if contentNum <= len(p.objects) {
-			output.Write(p.objects[contentNum-1])
-		}
-
-		output.WriteString("\nendobj\n")
+		output.WriteString(fmt.Sprintf("%d 0 obj\n", contentObjNum))
+		output.WriteString(fmt.Sprintf("<< /Length %d /Filter /FlateDecode >>\n", compressed.Len()))
+		output.WriteString("stream\n")
+		output.Write(compressed.Bytes())
+		output.WriteString("\nendstream\n")
+		output.WriteString("endobj\n")
 	}
 
 	// xref table
