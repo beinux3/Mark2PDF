@@ -169,35 +169,67 @@ func (c *Converter) renderElement(elem MarkdownElement) error {
 	return nil
 }
 
-// renderInlineElements renderizza una lista di elementi inline
+// renderInlineElements renderizza una lista di elementi inline con formattazione
 func (c *Converter) renderInlineElements(elements []InlineElement, baseFontSize float64, isBold bool) {
 	if len(elements) == 0 {
 		return
 	}
 
-	// For simplicity, concatenate all text and render
-	// In a more advanced implementation, this would handle different fonts for bold/italic
-	text := ""
+	// Calculate text width to handle wrapping
+	xOffset := 0.0
+	avgCharWidth := baseFontSize * 0.5
+	maxWidth := c.pdf.pageWidth - c.pdf.margin*2
+	currentLineWidth := 0.0
+
 	for _, elem := range elements {
+		var fontName string
+		var text string
+
 		switch elem.Type {
 		case "text":
-			text += elem.Content
+			fontName = "F1" // Regular
+			text = elem.Content
 		case "bold":
-			text += elem.Content // In PDF semplice, bold viene gestito con il flag
+			fontName = "F2" // Bold
+			text = elem.Content
 		case "italic":
-			text += elem.Content
+			fontName = "F3" // Italic
+			text = elem.Content
 		case "code":
-			text += "`" + elem.Content + "`"
+			fontName = "F4" // Monospace
+			text = elem.Content
 		case "link":
-			text += elem.Content + " (" + elem.URL + ")"
+			fontName = "F1"
+			text = elem.Content + " (" + elem.URL + ")"
 		case "image":
-			text += "[Image: " + elem.Alt + "]"
+			fontName = "F1"
+			text = "[Image: " + elem.Alt + "]"
 		case "strikethrough":
-			text += elem.Content
+			fontName = "F1"
+			text = elem.Content
+		default:
+			continue
 		}
+
+		// Estimate text width
+		textWidth := float64(len(text)) * avgCharWidth
+
+		// Check if we need to wrap
+		if currentLineWidth+textWidth > maxWidth {
+			// Move to next line
+			c.pdf.yPosition -= baseFontSize * 1.5
+			currentLineWidth = 0
+			xOffset = 0
+		}
+
+		// Write the text inline
+		c.pdf.writeInlineText(text, baseFontSize, fontName, xOffset)
+		xOffset += textWidth
+		currentLineWidth += textWidth
 	}
 
-	c.writeWrappedText(text, baseFontSize, isBold)
+	// Move to next line after finishing all elements
+	c.pdf.yPosition -= baseFontSize * 1.5
 }
 
 // renderTable renderizza una tabella

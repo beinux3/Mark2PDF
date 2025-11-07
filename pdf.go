@@ -63,6 +63,11 @@ func (p *PDFWriter) newPage() {
 
 // writeText scrive testo alla posizione corrente
 func (p *PDFWriter) writeText(text string, fontSize float64, isBold bool) {
+	p.writeTextWithFont(text, fontSize, "F1") // Default font
+}
+
+// writeTextWithFont scrive testo con un font specifico
+func (p *PDFWriter) writeTextWithFont(text string, fontSize float64, fontName string) {
 	if p.currentBuf == nil {
 		p.newPage()
 	}
@@ -73,7 +78,7 @@ func (p *PDFWriter) writeText(text string, fontSize float64, isBold bool) {
 	}
 
 	p.currentBuf.WriteString("BT\n")
-	p.currentBuf.WriteString(fmt.Sprintf("/F1 %.2f Tf\n", fontSize))
+	p.currentBuf.WriteString(fmt.Sprintf("/%s %.2f Tf\n", fontName, fontSize))
 	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f Td\n", p.margin, p.yPosition))
 
 	// Escape special characters in text
@@ -82,6 +87,27 @@ func (p *PDFWriter) writeText(text string, fontSize float64, isBold bool) {
 	p.currentBuf.WriteString("ET\n")
 
 	p.yPosition -= fontSize * 1.5
+}
+
+// writeInlineText scrive testo inline senza andare a capo
+func (p *PDFWriter) writeInlineText(text string, fontSize float64, fontName string, xOffset float64) {
+	if p.currentBuf == nil {
+		p.newPage()
+	}
+
+	// Check if we need a new page
+	if p.yPosition < p.margin+20 {
+		p.newPage()
+	}
+
+	p.currentBuf.WriteString("BT\n")
+	p.currentBuf.WriteString(fmt.Sprintf("/%s %.2f Tf\n", fontName, fontSize))
+	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f Td\n", p.margin+xOffset, p.yPosition))
+
+	// Escape special characters in text
+	escapedText := escapeString(text)
+	p.currentBuf.WriteString(fmt.Sprintf("(%s) Tj\n", escapedText))
+	p.currentBuf.WriteString("ET\n")
 }
 
 // writeLine scrive una linea orizzontale
@@ -169,7 +195,7 @@ func (p *PDFWriter) Build() ([]byte, error) {
 
 	// Calculate object numbers
 	fontObjNum := objNum + 1
-	pageObjStart := fontObjNum + 1
+	pageObjStart := fontObjNum + 4 // Now we have 4 fonts (F1, F2, F3, F4)
 	contentObjStart := pageObjStart + numPages
 
 	// Write Pages object
@@ -185,12 +211,32 @@ func (p *PDFWriter) Build() ([]byte, error) {
 	output.WriteString("endobj\n")
 	objNum++
 
-	// Font object (Object 3)
+	// Font objects (F1=Helvetica, F2=Helvetica-Bold, F3=Helvetica-Oblique, F4=Courier)
+	// F1 - Regular (Object 3)
 	xrefPositions = append(xrefPositions, output.Len())
 	output.WriteString(fmt.Sprintf("%d 0 obj\n", fontObjNum))
 	output.WriteString("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\n")
 	output.WriteString("endobj\n")
-	objNum = fontObjNum + 1
+
+	// F2 - Bold (Object 4)
+	xrefPositions = append(xrefPositions, output.Len())
+	output.WriteString(fmt.Sprintf("%d 0 obj\n", fontObjNum+1))
+	output.WriteString("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\n")
+	output.WriteString("endobj\n")
+
+	// F3 - Italic (Object 5)
+	xrefPositions = append(xrefPositions, output.Len())
+	output.WriteString(fmt.Sprintf("%d 0 obj\n", fontObjNum+2))
+	output.WriteString("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>\n")
+	output.WriteString("endobj\n")
+
+	// F4 - Code/Monospace (Object 6)
+	xrefPositions = append(xrefPositions, output.Len())
+	output.WriteString(fmt.Sprintf("%d 0 obj\n", fontObjNum+3))
+	output.WriteString("<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\n")
+	output.WriteString("endobj\n")
+
+	objNum = fontObjNum + 4
 
 	// Page objects
 	for i := range p.pageContents {
@@ -203,7 +249,9 @@ func (p *PDFWriter) Build() ([]byte, error) {
 		output.WriteString(fmt.Sprintf("/Parent %d 0 R ", pagesObjNum))
 		output.WriteString(fmt.Sprintf("/MediaBox [0 0 %.2f %.2f] ", p.pageWidth, p.pageHeight))
 		output.WriteString(fmt.Sprintf("/Contents %d 0 R ", contentObjNum))
-		output.WriteString(fmt.Sprintf("/Resources << /Font << /F1 %d 0 R >> >> ", fontObjNum))
+		// Include all 4 fonts in resources
+		output.WriteString(fmt.Sprintf("/Resources << /Font << /F1 %d 0 R /F2 %d 0 R /F3 %d 0 R /F4 %d 0 R >> >> ",
+			fontObjNum, fontObjNum+1, fontObjNum+2, fontObjNum+3))
 		output.WriteString(">>\n")
 		output.WriteString("endobj\n")
 	}
