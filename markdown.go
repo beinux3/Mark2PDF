@@ -1,30 +1,34 @@
 package mark2pdf
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
 
 // MarkdownElement rappresenta un elemento del markdown parsato
 type MarkdownElement struct {
-	Type         string            // "h1", "h2", "h3", "h4", "h5", "h6", "p", "code", "list", "hr", "blockquote", "table"
-	Content      string            // Il contenuto testuale
-	Level        int               // Per liste e headers
-	Items        []string          // Per liste (raw content)
-	ItemChildren [][]InlineElement // Inline elements per ogni item della lista
-	Ordered      bool              // Se la lista è ordinata
-	Language     string            // Per blocchi di codice
-	TableRows    [][]string        // Per tabelle
-	TableAlign   []string          // Allineamento colonne tabella
-	Children     []InlineElement   // Elementi inline (bold, italic, code, link)
+	Type             string              // "h1", "h2", "h3", "h4", "h5", "h6", "p", "code", "list", "hr", "blockquote", "table"
+	Content          string              // Il contenuto testuale
+	Level            int                 // Per liste e headers
+	Items            []string            // Per liste (raw content)
+	ItemChildren     [][]InlineElement   // Inline elements per ogni item della lista
+	Ordered          bool                // Se la lista è ordinata
+	Language         string              // Per blocchi di codice
+	TableRows        [][]string          // Per tabelle (raw content)
+	TableCellsInline [][][]InlineElement // Inline elements per ogni cella della tabella [row][col][]InlineElement
+	TableAlign       []string            // Allineamento colonne tabella
+	Children         []InlineElement     // Elementi inline (bold, italic, code, link)
 }
 
 // InlineElement rappresenta elementi inline nel testo
 type InlineElement struct {
-	Type    string // "text", "bold", "italic", "code", "link", "image", "strikethrough"
-	Content string
-	URL     string // Per link e immagini
-	Alt     string // Per immagini
+	Type     string           // "text", "bold", "italic", "code", "link", "image", "strikethrough", "color"
+	Content  string           // Contenuto testuale (per text) o contenuto raw (per altri)
+	Children []InlineElement  // Elementi inline nested (per bold, italic, color, etc.)
+	URL      string           // Per link e immagini
+	Alt      string           // Per immagini
+	Color    *Color           // Per testo colorato
 }
 
 // MarkdownParser parsea il markdown in elementi
@@ -370,12 +374,20 @@ func (mp *MarkdownParser) parseTaskList(startIdx int) (MarkdownElement, int) {
 // parseTable parsea una tabella
 func (mp *MarkdownParser) parseTable(startIdx int) (MarkdownElement, int) {
 	rows := make([][]string, 0)
+	cellsInline := make([][][]InlineElement, 0)
 	align := make([]string, 0)
 
 	// Header row
 	headerLine := strings.TrimSpace(mp.lines[startIdx])
 	headerCells := parseTableRow(headerLine)
 	rows = append(rows, headerCells)
+
+	// Parse inline elements for header cells
+	headerInline := make([][]InlineElement, len(headerCells))
+	for i, cell := range headerCells {
+		headerInline[i] = mp.parseInline(cell)
+	}
+	cellsInline = append(cellsInline, headerInline)
 
 	// Separator row
 	if startIdx+1 < len(mp.lines) {
@@ -392,13 +404,22 @@ func (mp *MarkdownParser) parseTable(startIdx int) (MarkdownElement, int) {
 		}
 		cells := parseTableRow(line)
 		rows = append(rows, cells)
+
+		// Parse inline elements for data cells
+		rowInline := make([][]InlineElement, len(cells))
+		for j, cell := range cells {
+			rowInline[j] = mp.parseInline(cell)
+		}
+		cellsInline = append(cellsInline, rowInline)
+
 		i++
 	}
 
 	return MarkdownElement{
-		Type:       "table",
-		TableRows:  rows,
-		TableAlign: align,
+		Type:             "table",
+		TableRows:        rows,
+		TableCellsInline: cellsInline,
+		TableAlign:       align,
 	}, i - startIdx
 }
 
@@ -434,12 +455,114 @@ func (mp *MarkdownParser) parseParagraph(startIdx int) (MarkdownElement, int) {
 }
 
 // parseInline parsea elementi inline (bold, italic, code, link, etc)
+// parseColorName converte un nome colore in un oggetto Color
+func parseColorName(colorName string) *Color {
+	colorName = strings.ToLower(strings.TrimSpace(colorName))
+
+	// Colori predefiniti
+	colorMap := map[string]Color{
+		"black":   ColorBlack,
+		"red":     ColorRed,
+		"green":   ColorGreen,
+		"blue":    ColorBlue,
+		"yellow":  ColorYellow,
+		"cyan":    ColorCyan,
+		"magenta": ColorMagenta,
+		"orange":  ColorOrange,
+		"purple":  ColorPurple,
+		"gray":    ColorGray,
+		"grey":    ColorGray,
+		"white":   ColorWhite,
+	}
+
+	if color, ok := colorMap[colorName]; ok {
+		return &color
+	}
+
+	// Prova a parsare formato RGB: rgb(255,0,0) o #FF0000
+	if strings.HasPrefix(colorName, "rgb(") && strings.HasSuffix(colorName, ")") {
+		rgbStr := strings.TrimPrefix(colorName, "rgb(")
+		rgbStr = strings.TrimSuffix(rgbStr, ")")
+		parts := strings.Split(rgbStr, ",")
+		if len(parts) == 3 {
+			var r, g, b int
+			if _, err := fmt.Sscanf(strings.TrimSpace(parts[0]), "%d", &r); err == nil && r >= 0 && r <= 255 {
+				if _, err := fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &g); err == nil && g >= 0 && g <= 255 {
+					if _, err := fmt.Sscanf(strings.TrimSpace(parts[2]), "%d", &b); err == nil && b >= 0 && b <= 255 {
+						color := NewColor(r, g, b)
+						return &color
+					}
+				}
+			}
+		}
+	}
+
+	// Formato hex: #RRGGBB
+	if strings.HasPrefix(colorName, "#") && len(colorName) == 7 {
+		var r, g, b int
+		if _, err := fmt.Sscanf(colorName, "#%02x%02x%02x", &r, &g, &b); err == nil {
+			color := NewColor(r, g, b)
+			return &color
+		}
+	}
+
+	return nil
+}
+
 func (mp *MarkdownParser) parseInline(text string) []InlineElement {
 	elements := make([]InlineElement, 0)
 	current := ""
 	i := 0
 
 	for i < len(text) {
+		// Color {colorname}text{/colorname} or {color:name}text{/color}
+		if text[i] == '{' {
+			closeBrace := strings.Index(text[i+1:], "}")
+			if closeBrace != -1 {
+				colorTag := text[i+1 : i+1+closeBrace]
+
+				// Check for {color:name} or {colorname} syntax
+				var colorName string
+				var endTag string
+
+				if strings.HasPrefix(colorTag, "color:") {
+					colorName = strings.TrimPrefix(colorTag, "color:")
+					endTag = "{/color}"
+				} else {
+					// Direct color name
+					colorName = colorTag
+					endTag = "{/" + colorName + "}"
+				}
+
+				// Try to parse color
+				color := parseColorName(colorName)
+				if color != nil {
+					if current != "" {
+						elements = append(elements, InlineElement{Type: "text", Content: current})
+						current = ""
+					}
+
+					// Find end tag
+					endIdx := strings.Index(text[i+1+closeBrace+1:], endTag)
+					if endIdx != -1 {
+						coloredText := text[i+1+closeBrace+1 : i+1+closeBrace+1+endIdx]
+
+						// Parse inline elements inside the colored text recursively
+						children := mp.parseInline(coloredText)
+
+						elements = append(elements, InlineElement{
+							Type:     "color",
+							Content:  coloredText,
+							Children: children,
+							Color:    color,
+						})
+						i = i + 1 + closeBrace + 1 + endIdx + len(endTag)
+						continue
+					}
+				}
+			}
+		}
+
 		// Bold **text** or __text__
 		if i+1 < len(text) && (text[i:i+2] == "**" || text[i:i+2] == "__") {
 			if current != "" {

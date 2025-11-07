@@ -166,6 +166,93 @@ func (c *Converter) renderElement(elem MarkdownElement) error {
 	return nil
 }
 
+// convertInlineToTextParts converte elementi inline in TextParts ricorsivamente
+func (c *Converter) convertInlineToTextParts(elements []InlineElement, baseColor *Color) []TextPart {
+	parts := []TextPart{}
+
+	for _, elem := range elements {
+		// If element has children, process them recursively
+		if len(elem.Children) > 0 {
+			// Determine the color to inherit
+			inheritColor := baseColor
+			if elem.Type == "color" && elem.Color != nil {
+				inheritColor = elem.Color
+			}
+
+			// Process children recursively
+			childParts := c.convertInlineToTextParts(elem.Children, inheritColor)
+
+			// Apply formatting based on element type
+			for i := range childParts {
+				switch elem.Type {
+				case "bold":
+					if childParts[i].Font == "F1" {
+						childParts[i].Font = "F2"
+					}
+				case "italic":
+					if childParts[i].Font == "F1" {
+						childParts[i].Font = "F3"
+					}
+				case "code":
+					childParts[i].Font = "F4"
+				case "color":
+					if childParts[i].Color == nil {
+						childParts[i].Color = elem.Color
+					}
+				}
+			}
+
+			parts = append(parts, childParts...)
+		} else {
+			// Leaf node - convert to TextPart
+			var fontName string
+			var text string
+			var color *Color
+
+			switch elem.Type {
+			case "text":
+				fontName = "F1"
+				text = elem.Content
+				color = baseColor
+			case "bold":
+				fontName = "F2"
+				text = elem.Content
+				color = baseColor
+			case "italic":
+				fontName = "F3"
+				text = elem.Content
+				color = baseColor
+			case "code":
+				fontName = "F4"
+				text = elem.Content
+				color = baseColor
+			case "link":
+				fontName = "F1"
+				text = elem.Content + " (" + elem.URL + ")"
+				color = baseColor
+			case "image":
+				fontName = "F1"
+				text = "[Image: " + elem.Alt + "]"
+				color = baseColor
+			case "strikethrough":
+				fontName = "F1"
+				text = elem.Content
+				color = baseColor
+			case "color":
+				fontName = "F1"
+				text = elem.Content
+				color = elem.Color
+			default:
+				continue
+			}
+
+			parts = append(parts, TextPart{Text: text, Font: fontName, Color: color})
+		}
+	}
+
+	return parts
+}
+
 // renderInlineElementsWithPrefix renderizza un prefisso seguito da elementi inline
 func (c *Converter) renderInlineElementsWithPrefix(prefix string, elements []InlineElement, baseFontSize float64) {
 	// Build the complete text with formatting markers
@@ -176,39 +263,8 @@ func (c *Converter) renderInlineElementsWithPrefix(prefix string, elements []Inl
 		parts = append(parts, TextPart{Text: prefix, Font: "F1"})
 	}
 
-	// Add inline elements with their respective fonts
-	for _, elem := range elements {
-		var fontName string
-		var text string
-
-		switch elem.Type {
-		case "text":
-			fontName = "F1"
-			text = elem.Content
-		case "bold":
-			fontName = "F2"
-			text = elem.Content
-		case "italic":
-			fontName = "F3"
-			text = elem.Content
-		case "code":
-			fontName = "F4"
-			text = elem.Content
-		case "link":
-			fontName = "F1"
-			text = elem.Content + " (" + elem.URL + ")"
-		case "image":
-			fontName = "F1"
-			text = "[Image: " + elem.Alt + "]"
-		case "strikethrough":
-			fontName = "F1"
-			text = elem.Content
-		default:
-			continue
-		}
-
-		parts = append(parts, TextPart{Text: text, Font: fontName})
-	}
+	// Convert inline elements to text parts recursively
+	parts = append(parts, c.convertInlineToTextParts(elements, nil)...)
 
 	// Render with word wrapping
 	c.writeMultiStyleTextWrapped(parts, baseFontSize)
@@ -356,17 +412,38 @@ func (c *Converter) renderTable(elem MarkdownElement) {
 				c.pdf.drawRect(xPos, startY, cellWidth, rowHeight)
 			}
 
-			// Truncate text if too long for cell
-			maxCellChars := int((cellWidth - cellPadding*2) / avgCharWidth)
-			displayText := cell
-			if len(cell) > maxCellChars && maxCellChars > 3 {
-				displayText = cell[:maxCellChars-3] + "..."
-			}
-
-			// Draw cell text (centered vertically in cell)
-			// Calculate Y position: start from top of cell, go down by half row height, adjust for font baseline
+			// Draw cell text with inline formatting support
 			textY := startY - rowHeight/2 - fontSize/3
-			c.pdf.writeTextAt(displayText, xPos+cellPadding, textY, fontSize, isHeader)
+
+			// Check if we have inline elements for this cell
+			if rowIdx < len(elem.TableCellsInline) && colIdx < len(elem.TableCellsInline[rowIdx]) {
+				inlineElements := elem.TableCellsInline[rowIdx][colIdx]
+
+				// Convert inline elements to TextParts recursively
+				parts := c.convertInlineToTextParts(inlineElements, nil)
+
+				// Apply header bold if needed
+				if isHeader {
+					for i := range parts {
+						if parts[i].Font == "F1" {
+							parts[i].Font = "F2"
+						}
+					}
+				}
+
+				// Write multi-style text at position
+				if len(parts) > 0 {
+					c.pdf.writeMultiStyleTextAt(parts, xPos+cellPadding, textY, fontSize)
+				}
+			} else {
+				// Fallback to simple text rendering
+				maxCellChars := int((cellWidth - cellPadding*2) / avgCharWidth)
+				displayText := cell
+				if len(cell) > maxCellChars && maxCellChars > 3 {
+					displayText = cell[:maxCellChars-3] + "..."
+				}
+				c.pdf.writeTextAt(displayText, xPos+cellPadding, textY, fontSize, isHeader)
+			}
 
 			xPos += cellWidth
 		}

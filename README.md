@@ -11,6 +11,7 @@ A pure Go library for converting Markdown documents to PDF without any external 
 - **Zero external dependencies**: Completely native Go implementation
 - **Full Markdown parser**: Supports headers, lists, code blocks, blockquotes, tables, and more
 - **Rich inline formatting**: Bold, italic, inline code, links, images, and strikethrough
+- **Color support**: Named colors, RGB, and hex color codes for text
 - **Advanced table rendering**: Bordered tables with automatic column sizing and padding
 - **Native PDF generator**: Creates valid PDFs conforming to PDF 1.4 standard
 - **Word wrapping**: Automatic text wrapping for long paragraphs and inline elements
@@ -133,6 +134,39 @@ You can also combine formatting:
 **bold with `code`**
 ```
 
+### Colors
+
+Mark2PDF supports colored text using a simple syntax:
+
+```markdown
+{red}This text is red{/red}
+{blue}This text is blue{/blue}
+{color:green}This text is green{/color}
+```
+
+**Supported named colors:**
+- `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `orange`, `purple`, `gray`/`grey`, `black`, `white`
+
+**Custom colors:**
+```markdown
+{color:rgb(255,100,50)}Custom RGB color{/color}
+{color:#FF6347}Hex color (tomato){/color}
+```
+
+**Combining colors with other formatting:**
+```markdown
+**Bold with {red}red text{/red} inside**
+{blue}Blue text with **bold** inside{/blue}
+### {purple}Colored Header{/purple}
+```
+
+**Nested formatting (colors can contain formatting):**
+```markdown
+{blue}**Bold inside blue**{/blue}
+{red}*Italic inside red*{/red}
+{green}Text with **bold** and *italic*{/green}
+```
+
 ### Unordered Lists
 
 With full support for inline formatting:
@@ -224,15 +258,18 @@ ___
 ## Project Structure
 
 ```
-mark2pdf/
+Mark2PDF/
 ├── mark2pdf.go      # Main API and converter
-├── markdown.go      # Markdown parser
-├── pdf.go           # PDF generator
+├── markdown.go      # Markdown parser with color support
+├── pdf.go           # PDF generator with RGB colors
+├── color_test.go    # Unit tests for color functionality
 ├── examples/        # Usage examples
-│   ├── basic.go
-│   └── test.md
+│   ├── examples.go  # Example generator
+│   └── README.md    # Examples documentation
 ├── go.mod
 ├── LICENSE
+├── CHANGELOG.md
+├── COLOR_SUPPORT.md
 └── README.md
 ```
 
@@ -282,7 +319,6 @@ Some advanced features are not yet implemented:
 
 - Image embedding (images are displayed as text references)
 - Custom fonts (limited to standard PDF fonts)
-- Custom colors (uses only black)
 - Nested lists
 - Custom page sizes
 - Headers and footers
@@ -330,23 +366,21 @@ The `mark2pdf` package will be automatically downloaded and included in your bui
 
 ## Examples
 
-Complete examples can be found in the `examples/` directory. Run the test suite to see all features:
+Complete examples can be found in the `examples/` directory:
 
 ```bash
 cd examples
-go run basic.go
+go run examples.go
 ```
 
-This will generate 8 test PDFs demonstrating all supported features:
+This will generate 4 PDF files demonstrating all features:
 
-1. **test1_simple.pdf** - Basic document structure
-2. **test2_inline_formatting.pdf** - Bold, italic, code, links, images
-3. **test3_lists.pdf** - Unordered, ordered, and task lists with formatting
-4. **test4_code_blocks.pdf** - Code blocks with language specifications
-5. **test5_blockquotes.pdf** - Blockquotes with inline formatting
-6. **test6_tables.pdf** - Tables with proper borders and alignment
-7. **test7_horizontal_rules.pdf** - Horizontal rules as section separators
-8. **test8_comprehensive.pdf** - Complete showcase of all features
+1. **1_basic.pdf** - Headers, lists, code blocks, tables, blockquotes
+2. **2_inline_formatting.pdf** - Bold, italic, code, links, strikethrough
+3. **3_colors.pdf** - Named colors, RGB, hex, nested formatting
+4. **4_complete_demo.pdf** - Complete showcase of all features
+
+See [`examples/README.md`](examples/README.md) for detailed documentation.
 
 ### Command Line Tool
 

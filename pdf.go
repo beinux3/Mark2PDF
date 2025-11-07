@@ -110,10 +110,47 @@ func (p *PDFWriter) writeInlineText(text string, fontSize float64, fontName stri
 	p.currentBuf.WriteString("ET\n")
 }
 
-// TextPart rappresenta una parte di testo con un font specifico
+// Color rappresenta un colore RGB
+type Color struct {
+	R float64 // 0.0 - 1.0
+	G float64 // 0.0 - 1.0
+	B float64 // 0.0 - 1.0
+}
+
+// Colori predefiniti
+var (
+	ColorBlack   = Color{0, 0, 0}
+	ColorRed     = Color{1, 0, 0}
+	ColorGreen   = Color{0, 0.5, 0}
+	ColorBlue    = Color{0, 0, 1}
+	ColorYellow  = Color{1, 1, 0}
+	ColorCyan    = Color{0, 1, 1}
+	ColorMagenta = Color{1, 0, 1}
+	ColorOrange  = Color{1, 0.65, 0}
+	ColorPurple  = Color{0.5, 0, 0.5}
+	ColorGray    = Color{0.5, 0.5, 0.5}
+	ColorWhite   = Color{1, 1, 1}
+)
+
+// NewColor crea un nuovo colore da valori RGB (0-255)
+func NewColor(r, g, b int) Color {
+	return Color{
+		R: float64(r) / 255.0,
+		G: float64(g) / 255.0,
+		B: float64(b) / 255.0,
+	}
+}
+
+// NewColorFloat crea un nuovo colore da valori RGB float (0.0-1.0)
+func NewColorFloat(r, g, b float64) Color {
+	return Color{R: r, G: g, B: b}
+}
+
+// TextPart rappresenta una parte di testo con un font e colore specifico
 type TextPart struct {
-	Text string
-	Font string
+	Text  string
+	Font  string
+	Color *Color // nil = usa colore di default (nero)
 }
 
 // writeMultiStyleText scrive testo con stili multipli sulla stessa riga
@@ -131,8 +168,16 @@ func (p *PDFWriter) writeMultiStyleText(parts []TextPart, fontSize float64) {
 	p.currentBuf.WriteString("BT\n")
 	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f Td\n", p.margin, p.yPosition))
 
-	// Write each part with its font
+	// Write each part with its font and color
 	for _, part := range parts {
+		// Set color if specified
+		if part.Color != nil {
+			p.currentBuf.WriteString(fmt.Sprintf("%.3f %.3f %.3f rg\n", part.Color.R, part.Color.G, part.Color.B))
+		} else {
+			// Default to black
+			p.currentBuf.WriteString("0 0 0 rg\n")
+		}
+
 		p.currentBuf.WriteString(fmt.Sprintf("/%s %.2f Tf\n", part.Font, fontSize))
 		escapedText := escapeString(part.Text)
 		p.currentBuf.WriteString(fmt.Sprintf("(%s) Tj\n", escapedText))
@@ -204,6 +249,57 @@ func (p *PDFWriter) writeTextAt(text string, x, y, fontSize float64, isBold bool
 	escapedText := escapeString(text)
 	p.currentBuf.WriteString(fmt.Sprintf("(%s) Tj\n", escapedText))
 	p.currentBuf.WriteString("ET\n")
+}
+
+// writeMultiStyleTextAt scrive testo multi-stile a coordinate specifiche
+func (p *PDFWriter) writeMultiStyleTextAt(parts []TextPart, x, y, fontSize float64) {
+	if p.currentBuf == nil {
+		p.newPage()
+	}
+
+	// Start text block at specific position
+	p.currentBuf.WriteString("BT\n")
+	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f Td\n", x, y))
+
+	// Write each part with its font and color
+	for _, part := range parts {
+		// Set color if specified
+		if part.Color != nil {
+			p.currentBuf.WriteString(fmt.Sprintf("%.3f %.3f %.3f rg\n", part.Color.R, part.Color.G, part.Color.B))
+		} else {
+			// Default to black
+			p.currentBuf.WriteString("0 0 0 rg\n")
+		}
+
+		p.currentBuf.WriteString(fmt.Sprintf("/%s %.2f Tf\n", part.Font, fontSize))
+		escapedText := escapeString(part.Text)
+		p.currentBuf.WriteString(fmt.Sprintf("(%s) Tj\n", escapedText))
+	}
+
+	p.currentBuf.WriteString("ET\n")
+}
+
+// writeColoredText scrive testo con un colore specifico
+func (p *PDFWriter) writeColoredText(text string, fontSize float64, fontName string, color Color) {
+	if p.currentBuf == nil {
+		p.newPage()
+	}
+
+	// Check if we need a new page
+	if p.yPosition < p.margin+20 {
+		p.newPage()
+	}
+
+	p.currentBuf.WriteString("BT\n")
+	p.currentBuf.WriteString(fmt.Sprintf("%.3f %.3f %.3f rg\n", color.R, color.G, color.B))
+	p.currentBuf.WriteString(fmt.Sprintf("/%s %.2f Tf\n", fontName, fontSize))
+	p.currentBuf.WriteString(fmt.Sprintf("%.2f %.2f Td\n", p.margin, p.yPosition))
+
+	escapedText := escapeString(text)
+	p.currentBuf.WriteString(fmt.Sprintf("(%s) Tj\n", escapedText))
+	p.currentBuf.WriteString("ET\n")
+
+	p.yPosition -= fontSize * 1.5
 }
 
 // addSpace aggiunge spazio verticale
