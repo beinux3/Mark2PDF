@@ -60,67 +60,104 @@ func (c *Converter) renderElement(elem MarkdownElement) error {
 	switch elem.Type {
 	case "h1":
 		c.pdf.addSpace(10)
-		c.pdf.writeText(elem.Content, c.pdf.GetFontSize("h1"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h1"), true)
 		c.pdf.addSpace(5)
 
 	case "h2":
 		c.pdf.addSpace(8)
-		c.pdf.writeText(elem.Content, c.pdf.GetFontSize("h2"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h2"), true)
 		c.pdf.addSpace(4)
 
 	case "h3":
 		c.pdf.addSpace(6)
-		c.pdf.writeText(elem.Content, c.pdf.GetFontSize("h3"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h3"), true)
 		c.pdf.addSpace(3)
 
 	case "h4":
 		c.pdf.addSpace(5)
-		c.pdf.writeText(elem.Content, c.pdf.GetFontSize("h4"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h4"), true)
 		c.pdf.addSpace(2)
 
 	case "h5":
 		c.pdf.addSpace(4)
-		c.pdf.writeText(elem.Content, c.pdf.GetFontSize("h5"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h5"), true)
 		c.pdf.addSpace(2)
 
 	case "h6":
 		c.pdf.addSpace(3)
-		c.pdf.writeText(elem.Content, c.pdf.GetFontSize("h6"), true)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("h6"), true)
 		c.pdf.addSpace(2)
 
 	case "p":
-		content := stripInlineFormatting(elem.Content)
-		c.writeWrappedText(content, c.pdf.GetFontSize("normal"), false)
+		c.renderInlineElements(elem.Children, c.pdf.GetFontSize("normal"), false)
 		c.pdf.addSpace(8)
 
 	case "code":
 		c.pdf.addSpace(5)
+		if elem.Language != "" {
+			c.pdf.writeText("Code ("+elem.Language+"):", c.pdf.GetFontSize("normal"), false)
+		}
 		lines := strings.Split(elem.Content, "\n")
 		for _, line := range lines {
-			c.pdf.writeText(line, c.pdf.GetFontSize("code"), false)
+			c.pdf.writeText("  "+line, c.pdf.GetFontSize("code"), false)
 		}
 		c.pdf.addSpace(5)
 
 	case "list":
 		c.pdf.addSpace(3)
-		for _, item := range elem.Items {
-			text := "  - " + stripInlineFormatting(item)
-			c.writeWrappedText(text, c.pdf.GetFontSize("normal"), false)
+		for i, item := range elem.Items {
+			// Use inline children if available, otherwise use raw item
+			if i < len(elem.ItemChildren) && len(elem.ItemChildren[i]) > 0 {
+				c.pdf.writeText("  - ", c.pdf.GetFontSize("normal"), false)
+				c.renderInlineElements(elem.ItemChildren[i], c.pdf.GetFontSize("normal"), false)
+			} else {
+				text := "  - " + item
+				c.writeWrappedText(text, c.pdf.GetFontSize("normal"), false)
+			}
 		}
 		c.pdf.addSpace(5)
 
 	case "ordered-list":
 		c.pdf.addSpace(3)
 		for i, item := range elem.Items {
-			text := fmt.Sprintf("  %d. %s", i+1, stripInlineFormatting(item))
-			c.writeWrappedText(text, c.pdf.GetFontSize("normal"), false)
+			prefix := fmt.Sprintf("  %d. ", i+1)
+			if i < len(elem.ItemChildren) && len(elem.ItemChildren[i]) > 0 {
+				c.pdf.writeText(prefix, c.pdf.GetFontSize("normal"), false)
+				c.renderInlineElements(elem.ItemChildren[i], c.pdf.GetFontSize("normal"), false)
+			} else {
+				text := prefix + item
+				c.writeWrappedText(text, c.pdf.GetFontSize("normal"), false)
+			}
+		}
+		c.pdf.addSpace(5)
+
+	case "task-list":
+		c.pdf.addSpace(3)
+		for i, item := range elem.Items {
+			// Extract checkbox status
+			checkbox := "  [ ] "
+			if strings.HasPrefix(item, "[x]") {
+				checkbox = "  [x] "
+			}
+
+			if i < len(elem.ItemChildren) && len(elem.ItemChildren[i]) > 0 {
+				c.pdf.writeText(checkbox, c.pdf.GetFontSize("normal"), false)
+				c.renderInlineElements(elem.ItemChildren[i], c.pdf.GetFontSize("normal"), false)
+			} else {
+				c.writeWrappedText("  "+item, c.pdf.GetFontSize("normal"), false)
+			}
 		}
 		c.pdf.addSpace(5)
 
 	case "blockquote":
 		c.pdf.addSpace(5)
-		content := "  | " + stripInlineFormatting(elem.Content)
-		c.writeWrappedText(content, c.pdf.GetFontSize("normal"), false)
+		text := "  | " + elem.Content
+		c.writeWrappedText(text, c.pdf.GetFontSize("normal"), false)
+		c.pdf.addSpace(5)
+
+	case "table":
+		c.pdf.addSpace(5)
+		c.renderTable(elem)
 		c.pdf.addSpace(5)
 
 	case "hr":
@@ -130,6 +167,74 @@ func (c *Converter) renderElement(elem MarkdownElement) error {
 	}
 
 	return nil
+}
+
+// renderInlineElements renderizza una lista di elementi inline
+func (c *Converter) renderInlineElements(elements []InlineElement, baseFontSize float64, isBold bool) {
+	if len(elements) == 0 {
+		return
+	}
+
+	// For simplicity, concatenate all text and render
+	// In a more advanced implementation, this would handle different fonts for bold/italic
+	text := ""
+	for _, elem := range elements {
+		switch elem.Type {
+		case "text":
+			text += elem.Content
+		case "bold":
+			text += elem.Content // In PDF semplice, bold viene gestito con il flag
+		case "italic":
+			text += elem.Content
+		case "code":
+			text += "`" + elem.Content + "`"
+		case "link":
+			text += elem.Content + " (" + elem.URL + ")"
+		case "image":
+			text += "[Image: " + elem.Alt + "]"
+		case "strikethrough":
+			text += elem.Content
+		}
+	}
+
+	c.writeWrappedText(text, baseFontSize, isBold)
+}
+
+// renderTable renderizza una tabella
+func (c *Converter) renderTable(elem MarkdownElement) {
+	if len(elem.TableRows) == 0 {
+		return
+	}
+
+	// Calculate column widths
+	maxWidth := c.pdf.pageWidth - c.pdf.margin*2
+	numCols := len(elem.TableRows[0])
+	_ = maxWidth / float64(numCols) // colWidth for future use
+
+	// Render header row
+	if len(elem.TableRows) > 0 {
+		headerText := ""
+		for i, cell := range elem.TableRows[0] {
+			if i > 0 {
+				headerText += " | "
+			}
+			headerText += cell
+		}
+		c.pdf.writeText(headerText, c.pdf.GetFontSize("normal"), true)
+		c.pdf.writeLine(maxWidth)
+	}
+
+	// Render data rows
+	for i := 1; i < len(elem.TableRows); i++ {
+		rowText := ""
+		for j, cell := range elem.TableRows[i] {
+			if j > 0 {
+				rowText += " | "
+			}
+			rowText += cell
+		}
+		c.writeWrappedText(rowText, c.pdf.GetFontSize("normal"), false)
+	}
 }
 
 // writeWrappedText scrive testo con word wrapping
